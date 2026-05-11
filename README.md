@@ -1,6 +1,6 @@
 # New York City's neighborhoods by income, 1970 vs. 2015-2019
 
-A reanalysis applying [Scott Winship's method](https://www.aei.org/articles/chicagos-disappearing-middle-class-can-be-found-in-its-proliferating-upper-middle-class-neighborhoods/) (American Enterprise Institute, May 2025) to the five boroughs of New York City.
+A reanalysis applying [Scott Winship's method](https://www.aei.org/articles/chicagos-disappearing-middle-class-can-be-found-in-its-proliferating-upper-middle-class-neighborhoods/) (American Enterprise Institute, April 30, 2026) to the five boroughs of New York City.
 
 **Full credit to Winship and AEI** for the method, income thresholds, inflation index choice, and framing — which themselves build on the University of Illinois Chicago Voorhees Center's tract classification scheme. This repository contributes only the New York data assembly and the charts.
 
@@ -39,7 +39,7 @@ For each NYC census tract in 1970 and 2015-2019, classify by per-capita income r
 
 ## Credit
 
-- **Method, framing, inflation choices:** Scott Winship, American Enterprise Institute, May 2025.
+- **Method, framing, inflation choices:** Scott Winship, American Enterprise Institute, April 30, 2026.
 - **Original tract classification scheme:** University of Illinois Chicago Voorhees Center.
 - **New York data assembly and charts:** Josh Greenman, May 2026.
 - **Page styling:** [Vital City design system](https://vital-city-nyc.github.io/vital-city-design-system/).
