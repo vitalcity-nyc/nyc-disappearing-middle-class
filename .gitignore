@@ -1,0 +1,7 @@
+data/LTDB.zip
+data/LTDB.accdb
+data/LTDB_Std_All_fullcount.zip
+data/LTDB_Std_All_Sample.zip
+data/ltdb_std_all_sample/
+.DS_Store
+__pycache__/
