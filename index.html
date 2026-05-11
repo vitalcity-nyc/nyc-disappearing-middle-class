@@ -271,15 +271,26 @@
 </section>
 
 <section>
-  <h2>Distribution of tracts by per-capita income</h2>
-  <p>Each dot is one census tract, sized by population. Color indicates the tract's income band under the 1970-anchored thresholds.</p>
+  <h2>The whole income distribution shifted right</h2>
+  <p>Each bar shows the share of New York City residents whose tract had per-capita income in that bracket. Both years are in 2019 dollars, so the bars are directly comparable.</p>
   <div class="chart-card">
     <div class="chart-head">
-      <h3>Tract per-capita income, 1970 vs. 2015-2019 (both shown in 2019 dollars)</h3>
-      <label class="ctrl"><input type="checkbox" id="log-scale"> Log scale on income axis</label>
+      <h3>Share of New York City residents by tract per-capita income (2019 dollars)</h3>
+      <label class="ctrl"><input type="checkbox" id="zero-hist" checked> Y-axis starts at zero</label>
     </div>
-    <div class="chart-box" style="height:460px"><canvas id="scatter"></canvas></div>
-    <div class="footnote">1970 incomes are inflated to 2019 dollars using the Bureau of Economic Analysis Personal Consumption Expenditures price index (multiplier <span id="pce-mult"></span>x), following Winship.</div>
+    <div class="chart-box" style="height:420px"><canvas id="hist"></canvas></div>
+    <div class="footnote">1970 incomes are inflated to 2019 dollars using the Bureau of Economic Analysis Personal Consumption Expenditures price index (multiplier <span id="pce-mult"></span>x), following Winship. The top bin is open-ended ($100k and up).</div>
+  </div>
+</section>
+
+<section>
+  <h2>What 1970 tracts became</h2>
+  <p>Same census tract (2010 boundaries), at both endpoints. Each row shows how the population of a 1970 income band redistributed by 2015-19. The diagonal is "stayed in the same band"; everything to the right of the diagonal is "moved up."</p>
+
+  <div class="chart-card">
+    <h3>Transition matrix &mdash; share of each 1970 band's population by 2015-19 band</h3>
+    <div id="transition-matrix" style="margin-top:14px"></div>
+    <div class="footnote" style="margin-top:8px">Rows sum to 100%. Cell shade indicates magnitude. Of the 2,117 NYC tracts in the matched set, the population of "high" 1970 tracts is now <strong>76% very-high</strong>; the population of "middle" 1970 tracts split into <strong>39% still middle, 50% upper-middle or upper, and 11% lower</strong>.</div>
   </div>
 </section>
 
@@ -357,7 +368,7 @@ const COLORS = {
 const ORDER = ['very_low','low','middle','high','very_high'];
 const LABELS = { very_low:'Very low', low:'Low', middle:'Middle', high:'High', very_high:'Very high' };
 
-fetch('output/data.json').then(r=>r.json()).then(render);
+fetch('output/data.json?v=2').then(r=>r.json()).then(render);
 
 function fmt(n) { return n.toLocaleString('en-US'); }
 function pct(x) { return (x*100).toFixed(1) + '%'; }
@@ -515,35 +526,60 @@ function render(d) {
   html += '</tbody>';
   document.getElementById('boro-table').innerHTML = html;
 
-  // Scatter
-  const mult = meta.pce_multiplier_1970_to_2019;
-  const pts70 = d.tracts_1970.filter(t=>t.inc>0).map(t => ({
-    x: 1970, y: t.inc * mult, r: Math.max(2, Math.sqrt(t.pop)/22), cat: t.cat,
-  }));
-  const pts19 = d.tracts_2019.filter(t=>t.inc>0).map(t => ({
-    x: 2019, y: t.inc, r: Math.max(2, Math.sqrt(t.pop)/22), cat: t.cat,
-  }));
-  const datasetsByCat = ORDER.map(c => ({
-    label: LABELS[c],
-    data: [...pts70.filter(p=>p.cat===c), ...pts19.filter(p=>p.cat===c)],
-    backgroundColor: COLORS[c] + 'b3',
-    borderColor: 'transparent',
-  }));
-  const scatterChart = new Chart(document.getElementById('scatter'), {
-    type: 'bubble',
-    data: { datasets: datasetsByCat },
+  // Histogram (overlay bars: 1970 in 2019$ vs 2015-19)
+  const h70 = d.histogram_1970_in_2019_dollars;
+  const h19 = d.histogram_2019;
+  const histChart = new Chart(document.getElementById('hist'), {
+    type: 'bar',
+    data: {
+      labels: h19.labels,
+      datasets: [
+        { label: '1970 (in 2019 dollars)', data: h70.shares.map(s=>s*100),
+          backgroundColor: 'rgba(112,113,117,0.55)', borderColor: 'rgba(112,113,117,0.9)', borderWidth: 1 },
+        { label: '2015-2019', data: h19.shares.map(s=>s*100),
+          backgroundColor: COLORS.very_high + 'cc', borderColor: COLORS.very_high, borderWidth: 1 },
+      ],
+    },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { position: 'bottom', labels: { boxWidth: 14 } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${dollars(c.parsed.y)} (year ${c.parsed.x})` } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}% of residents` } },
       },
       scales: {
-        x: { type: 'linear', min: 1965, max: 2024, ticks: { stepSize: 1, callback: v => (v===1970||v===2019)?v:'' }, title: { display: true, text: 'Year' } },
-        y: { type: 'linear', title: { display: true, text: 'Per-capita income (2019 dollars)' }, ticks: { callback: v => '$'+(v/1000).toFixed(0)+'k' } },
+        x: { title: { display: true, text: 'Tract per-capita income (2019 dollars)' }, ticks: { maxRotation: 35, minRotation: 35 } },
+        y: { beginAtZero: true, title: { display: true, text: 'Share of New York City residents' }, ticks: { callback: v => v+'%' } },
       },
     },
   });
+
+  // Transition matrix as a colored HTML table
+  const tm = d.transitions.matrix_pop;
+  let trHtml = '<table style="font-size:13px">';
+  trHtml += '<thead><tr><th style="text-align:left">1970 band &darr;<br>2015-19 band &rarr;</th>';
+  ORDER.forEach(c => { trHtml += `<th>${LABELS[c]}</th>`; });
+  trHtml += '<th>Total residents</th></tr></thead><tbody>';
+  ORDER.forEach(c1 => {
+    const row = tm[c1];
+    const total = ORDER.reduce((s,c2)=>s+row[c2], 0) || 1;
+    trHtml += `<tr><th style="text-align:left;background:${COLORS[c1]}22;border-left:4px solid ${COLORS[c1]}">${LABELS[c1]}</th>`;
+    ORDER.forEach(c2 => {
+      const v = row[c2] / total;
+      const isUp = ORDER.indexOf(c2) > ORDER.indexOf(c1);
+      const isDown = ORDER.indexOf(c2) < ORDER.indexOf(c1);
+      const isDiag = ORDER.indexOf(c2) === ORDER.indexOf(c1);
+      // Color: stayed = neutral gray, up = indigo tint, down = red tint, intensity = v
+      let base = isDiag ? '112,113,117' : isUp ? '57,72,130' : '210,35,42';
+      const alpha = Math.min(0.85, 0.10 + v * 1.0);
+      const cellStyle = `background: rgba(${base}, ${alpha}); color: ${alpha > 0.55 ? '#fff' : '#1a1a1a'}; font-weight:${isDiag ? 700 : 400};`;
+      trHtml += `<td style="${cellStyle}">${(v*100).toFixed(0)}%</td>`;
+    });
+    trHtml += `<td style="text-align:right;color:#707175">${fmt(Math.round(total))}</td>`;
+    trHtml += '</tr>';
+  });
+  trHtml += '</tbody></table>';
+  trHtml += '<div class="legend" style="margin-top:14px"><span style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;background:rgba(57,72,130,.7)"></span>Moved up</span><span style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;background:rgba(112,113,117,.55)"></span>Stayed</span><span style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;background:rgba(210,35,42,.7)"></span>Moved down</span></div>';
+  document.getElementById('transition-matrix').innerHTML = trHtml;
 
   // Tract counts
   function countByCat(tracts) {
@@ -589,11 +625,7 @@ function render(d) {
   bindZeroToggle('zero-share', cityChart, 'x', 100);
   bindZeroToggle('zero-boro', boroChart, 'y', 100);
   bindZeroToggle('zero-tracts', tcChart, 'y');
-
-  document.getElementById('log-scale').addEventListener('change', e => {
-    scatterChart.options.scales.y.type = e.target.checked ? 'logarithmic' : 'linear';
-    scatterChart.update();
-  });
+  bindZeroToggle('zero-hist', histChart, 'y');
 }
 </script>
 </body>

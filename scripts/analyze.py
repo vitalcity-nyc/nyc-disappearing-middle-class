@@ -85,6 +85,8 @@ def load_year(path, pop_col, inc_col, thresholds):
             tid = (row.get('TRTID10') or row.get('tractid') or '').strip()
             if not tid.startswith(NYC_PREFIXES):
                 continue
+            # Normalize tract id to 11 chars (state+county+tract)
+            tid = tid.zfill(11)
             try:
                 pop = float(row[pop_col] or 0)
                 inc = float(row[inc_col]) if row[inc_col] else None
@@ -138,6 +140,54 @@ def hist(tracts, dollars_label):
     return arr
 
 
+# Population-weighted histogram in 2019 dollars (10 bins from $0 to $100k+ open top)
+def pop_histogram_2019(tracts, mult=1.0, edges=None):
+    if edges is None:
+        edges = [0, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 50000,
+                 65000, 80000, 100000, 1e9]
+    bins = [0.0] * (len(edges) - 1)
+    total = 0.0
+    for t in tracts.values():
+        if t['pop'] <= 0 or t['inc'] is None:
+            continue
+        inc = t['inc'] * mult
+        total += t['pop']
+        for i in range(len(edges) - 1):
+            if inc < edges[i + 1]:
+                bins[i] += t['pop']
+                break
+    shares = [b / total for b in bins] if total else bins
+    labels = []
+    for i in range(len(edges) - 1):
+        lo, hi = edges[i], edges[i + 1]
+        if hi >= 1e9:
+            labels.append(f'${int(lo/1000)}k+')
+        elif lo == 0:
+            labels.append(f'Under ${int(hi/1000)}k')
+        else:
+            labels.append(f'${int(lo/1000)}-${int(hi/1000)}k')
+    return {'edges': edges, 'labels': labels, 'pop': bins, 'shares': shares, 'total_pop': total}
+
+
+# Transition matrix: where did each 1970 tract end up in 2015-19?
+def transition_matrix(tracts70, tracts19):
+    mat = {c1: {c2: 0.0 for c2 in CATS} for c1 in CATS}
+    matched_pop = 0.0
+    unmatched = 0
+    for tid, t1 in tracts70.items():
+        if t1['cat'] is None or t1['pop'] <= 0:
+            continue
+        t2 = tracts19.get(tid)
+        if not t2 or t2['cat'] is None:
+            unmatched += 1
+            continue
+        # Use the 2015-19 population as the "weight" — i.e. how many current
+        # residents live in tracts that started in band X.
+        mat[t1['cat']][t2['cat']] += t2['pop']
+        matched_pop += t2['pop']
+    return {'matrix_pop': mat, 'matched_pop': matched_pop, 'unmatched_tracts': unmatched}
+
+
 payload = {
     'meta': {
         'metro_pci_1970_nominal': round(metro_pci_1970, 0),
@@ -153,6 +203,9 @@ payload = {
     'summary_2019': s2019,
     'tracts_1970': hist(tracts_1970, '1970'),
     'tracts_2019': hist(tracts_2019, '2019'),
+    'histogram_1970_in_2019_dollars': pop_histogram_2019(tracts_1970, mult=PCE_TO_2019),
+    'histogram_2019': pop_histogram_2019(tracts_2019, mult=1.0),
+    'transitions': transition_matrix(tracts_1970, tracts_2019),
 }
 
 with open(os.path.join(OUT, 'data.json'), 'w') as f:
