@@ -69,31 +69,69 @@
   }
   p { margin: 0 0 14px; font-size: 16px; line-height: 1.6; }
 
-  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 24px 0 8px; }
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 24px 0 8px; }
   .stat {
     background: var(--vc-bg, #fff);
     border: 1px solid var(--vc-border, #dddddd);
-    border-top: 4px solid var(--vc-orange, #ff7c53);
-    padding: 18px 16px 14px;
+    border-top: 4px solid var(--vc-charcoal-50, #b9b9ba);
+    padding: 18px 18px 16px;
+    display: flex;
+    flex-direction: column;
   }
-  .stat .num {
-    font-family: var(--vc-font-serif, "GascogneTS", "Iowan Old Style", Georgia, serif);
-    font-weight: 200;
-    font-size: 38px;
-    line-height: 1.05;
-    letter-spacing: -0.01em;
+  .stat .band-name {
+    font-family: var(--vc-font-sans, halyard-text, sans-serif);
+    font-size: 12px;
+    color: var(--vc-charcoal, #707175);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    margin-bottom: 14px;
+    line-height: 1.3;
   }
-  .stat .lab {
+  .stat .pair {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 10px;
+  }
+  .stat .col { display: flex; flex-direction: column; gap: 4px; }
+  .stat .col.right { text-align: right; }
+  .stat .yr {
     font-family: var(--vc-font-sans, halyard-text, sans-serif);
     font-size: 11px;
     color: var(--vc-charcoal, #707175);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin-top: 8px;
+  }
+  .stat .num {
+    font-family: var(--vc-font-serif, "GascogneTS", "Iowan Old Style", Georgia, serif);
+    font-weight: 200;
+    font-size: 38px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .stat .arrow {
+    font-family: var(--vc-font-sans, halyard-text, sans-serif);
+    font-size: 22px;
+    color: var(--vc-charcoal, #707175);
+    line-height: 1;
+    padding: 0 4px;
+  }
+  .stat .delta {
+    font-family: var(--vc-font-sans, halyard-text, sans-serif);
+    font-size: 13px;
+    font-weight: 700;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--vc-border, #dddddd);
     line-height: 1.4;
   }
-  .stat.up { border-top-color: var(--vc-indigo, #394882); }
-  .stat.down { border-top-color: var(--vc-baddest-red, #d2232a); }
+  .stat.up    { border-top-color: var(--vc-indigo, #394882); }
+  .stat.up    .delta { color: var(--vc-indigo, #394882); }
+  .stat.down  { border-top-color: var(--vc-baddest-red, #d2232a); }
+  .stat.down  .delta { color: var(--vc-baddest-red, #d2232a); }
+  .stat.flat  { border-top-color: var(--vc-charcoal-50, #b9b9ba); }
+  .stat.flat  .delta { color: var(--vc-charcoal, #707175); }
 
   .chart-card {
     border: 1px solid var(--vc-border, #dddddd);
@@ -331,16 +369,51 @@ function render(d) {
   const meta = d.meta;
   document.getElementById('pce-mult').textContent = meta.pce_multiplier_1970_to_2019.toFixed(2);
 
-  const stats = [
-    { num: pct(s70.middle), lab: 'Middle-income tracts, 1970 (share of New York City residents)', cls: '' },
-    { num: pct(s19.middle), lab: 'Middle-income tracts, 2015-19', cls: 'down' },
-    { num: pct(s70.very_high + s70.high), lab: 'Upper-income (high + very high), 1970', cls: '' },
-    { num: pct(s19.very_high + s19.high), lab: 'Upper-income, 2015-19', cls: 'up' },
-    { num: pct(s70.very_low + s70.low), lab: 'Lower-income (low + very low), 1970', cls: '' },
-    { num: pct(s19.very_low + s19.low), lab: 'Lower-income, 2015-19', cls: 'down' },
+  const lower70 = s70.very_low + s70.low, lower19 = s19.very_low + s19.low;
+  const upper70 = s70.high + s70.very_high, upper19 = s19.high + s19.very_high;
+  function deltaStr(a, b) {
+    const d = (b - a) * 100;
+    const sign = d > 0 ? '+' : '';
+    return `${sign}${d.toFixed(1)} pts (${b > a ? 'grew' : 'shrank'} by ${Math.abs(d).toFixed(1)} points)`;
+  }
+  function trend(a, b) {
+    if (b > a + 0.005) return 'up';
+    if (b < a - 0.005) return 'down';
+    return 'flat';
+  }
+  const cards = [
+    {
+      band: 'Lower-income tracts (under 80% of 1970 metro per-capita income)',
+      a: lower70, b: lower19,
+    },
+    {
+      band: 'Middle-income tracts (80-120%)',
+      a: s70.middle, b: s19.middle,
+    },
+    {
+      band: 'Upper-income tracts (over 120%)',
+      a: upper70, b: upper19,
+    },
   ];
-  document.getElementById('headline-stats').innerHTML = stats.map(s =>
-    `<div class="stat ${s.cls}"><div class="num">${s.num}</div><div class="lab">${s.lab}</div></div>`).join('');
+  document.getElementById('headline-stats').innerHTML = cards.map(c => {
+    const dir = trend(c.a, c.b);
+    return `
+      <div class="stat ${dir}">
+        <div class="band-name">${c.band}</div>
+        <div class="pair">
+          <div class="col">
+            <div class="yr">1970</div>
+            <div class="num">${pct(c.a)}</div>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="col right">
+            <div class="yr">2015-19</div>
+            <div class="num">${pct(c.b)}</div>
+          </div>
+        </div>
+        <div class="delta">${deltaStr(c.a, c.b)}</div>
+      </div>`;
+  }).join('');
 
   const t1 = meta.thresholds_1970_dollars, t2 = meta.thresholds_2019_dollars;
   document.getElementById('threshold-table').innerHTML = `
