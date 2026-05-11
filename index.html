@@ -6,6 +6,8 @@
 <title>New York's neighborhoods by income, 1970 vs. 2015-2019 — a Winship-method reanalysis</title>
 <meta name="description" content="Scott Winship's reanalysis of Chicago's 'disappearing middle class,' applied to the five boroughs of New York City. Census tract per-capita income, 1970 vs. 2015-2019.">
 <link rel="stylesheet" href="https://use.typekit.net/qqk2vto.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <link rel="stylesheet" href="https://vital-city-nyc.github.io/vital-city-design-system/tokens/tokens.css">
 <link rel="stylesheet" href="https://vital-city-nyc.github.io/vital-city-design-system/fonts/fonts.css">
 <link rel="stylesheet" href="https://vital-city-nyc.github.io/vital-city-design-system/components/components.css">
@@ -151,6 +153,14 @@
   .ctrl { font-size: 12px; color: var(--vc-charcoal, #707175); user-select: none; }
   .ctrl input { vertical-align: middle; margin-right: 4px; }
   .chart-box { position: relative; height: 380px; }
+  .map-toggle label { margin-right: 12px; cursor: pointer; }
+  #map { background: #f4f4f4; }
+  .leaflet-container { font-family: var(--vc-font-sans, halyard-text, sans-serif); }
+  .map-tooltip {
+    background: #fff; padding: 6px 10px; border: 1px solid #ddd;
+    font-size: 12px; line-height: 1.45; box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  .map-tooltip strong { display: block; margin-bottom: 2px; }
 
   .legend {
     display: flex; flex-wrap: wrap; gap: 14px;
@@ -271,6 +281,24 @@
 </section>
 
 <section>
+  <h2>Map: tract income band, then and now</h2>
+  <p>Every census tract in the five boroughs, colored by its 1970-anchored income band. Toggle between 1970, 2015-2019, and a "change" view that highlights which tracts moved up or down. Hover for tract-level numbers.</p>
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>Tract per-capita-income band, New York City</h3>
+      <div class="ctrl map-toggle" role="radiogroup" aria-label="Map year">
+        <label><input type="radio" name="mapyr" value="cat70" checked> 1970</label>
+        <label><input type="radio" name="mapyr" value="cat19"> 2015-2019</label>
+        <label><input type="radio" name="mapyr" value="move"> Change</label>
+      </div>
+    </div>
+    <div id="map" style="height:560px; border:1px solid var(--vc-border, #ddd);"></div>
+    <div class="legend" id="map-legend" style="margin-top:10px"></div>
+    <div class="footnote" style="margin-top:6px">Tract geometry: U.S. Census Bureau 2010 cartographic boundary file (1:500,000). Bands as defined above. A small number of tracts (44 in 1970, 50 in 2015-2019, mostly parks, airports, cemeteries) are drawn in white because no per-capita income is reported.</div>
+  </div>
+</section>
+
+<section>
   <h2>The whole income distribution shifted right</h2>
   <p>Each bar shows the share of New York City residents whose tract had per-capita income in that bracket. Both years are in 2019 dollars, so the bars are directly comparable.</p>
   <div class="chart-card">
@@ -368,7 +396,10 @@ const COLORS = {
 const ORDER = ['very_low','low','middle','high','very_high'];
 const LABELS = { very_low:'Very low', low:'Low', middle:'Middle', high:'High', very_high:'Very high' };
 
-fetch('output/data.json?v=2').then(r=>r.json()).then(render);
+Promise.all([
+  fetch('output/data.json?v=2').then(r=>r.json()),
+  fetch('output/nyc_tracts.geojson?v=2').then(r=>r.json()),
+]).then(([data, geo]) => { render(data); renderMap(geo); });
 
 function fmt(n) { return n.toLocaleString('en-US'); }
 function pct(x) { return (x*100).toFixed(1) + '%'; }
@@ -626,6 +657,103 @@ function render(d) {
   bindZeroToggle('zero-boro', boroChart, 'y', 100);
   bindZeroToggle('zero-tracts', tcChart, 'y');
   bindZeroToggle('zero-hist', histChart, 'y');
+}
+
+function renderMap(geo) {
+  const MOVE_COLORS = {
+    up:   getComputedStyle(document.documentElement).getPropertyValue('--vc-indigo').trim()      || '#394882',
+    same: '#dddddd',
+    down: getComputedStyle(document.documentElement).getPropertyValue('--vc-baddest-red').trim() || '#d2232a',
+  };
+  const NO_DATA = '#ffffff';
+  const map = L.map('map', { zoomControl: true, scrollWheelZoom: false, attributionControl: true })
+    .setView([40.715, -74.01], 10);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://carto.com/attributions">CARTO</a> &middot; Tracts: U.S. Census 2010',
+    subdomains: 'abcd',
+  }).addTo(map);
+
+  let mode = 'cat70';
+  function colorFor(props) {
+    if (mode === 'move') {
+      return props.move ? MOVE_COLORS[props.move] : NO_DATA;
+    }
+    const c = props[mode];
+    return c ? COLORS[c] : NO_DATA;
+  }
+
+  const layer = L.geoJSON(geo, {
+    style: f => ({
+      color: '#444',
+      weight: 0.25,
+      fillColor: colorFor(f.properties),
+      fillOpacity: 0.82,
+    }),
+    onEachFeature: (f, l) => {
+      l.bindTooltip(() => buildTooltip(f.properties), {
+        direction: 'top', sticky: true, className: 'map-tooltip', opacity: 1,
+      });
+      l.on('mouseover', e => e.target.setStyle({ weight: 1.6, color: '#000' }));
+      l.on('mouseout',  e => layer.resetStyle(e.target));
+    },
+  }).addTo(map);
+  map.fitBounds(layer.getBounds(), { padding: [10, 10] });
+
+  function buildTooltip(p) {
+    const fmtDollars = n => n ? '$' + Math.round(n).toLocaleString('en-US') : 'n/a';
+    const lab = c => c ? LABELS[c] : 'no data';
+    if (mode === 'move') {
+      const move = p.move === 'up' ? '&uarr; moved up' :
+                   p.move === 'down' ? '&darr; moved down' :
+                   p.move === 'same' ? 'stayed in same band' : 'no data';
+      return `<strong>Tract ${p.tid}</strong>
+        1970: ${lab(p.cat70)}<br>2015-19: ${lab(p.cat19)}<br>
+        <em>${move}</em>`;
+    }
+    if (mode === 'cat70') {
+      return `<strong>Tract ${p.tid}</strong>
+        1970 band: <strong>${lab(p.cat70)}</strong><br>
+        Per-capita income (1970 $): ${fmtDollars(p.inc70)}<br>
+        Population: ${p.pop70 ? Math.round(p.pop70).toLocaleString('en-US') : 'n/a'}`;
+    }
+    return `<strong>Tract ${p.tid}</strong>
+      2015-19 band: <strong>${lab(p.cat19)}</strong><br>
+      Per-capita income (2019 $): ${fmtDollars(p.inc19)}<br>
+      Population: ${p.pop19 ? Math.round(p.pop19).toLocaleString('en-US') : 'n/a'}`;
+  }
+
+  function buildLegend() {
+    const el = document.getElementById('map-legend');
+    if (mode === 'move') {
+      el.innerHTML = `
+        <span style="display:flex;align-items:center;gap:6px"><i style="display:inline-block;width:14px;height:14px;background:${MOVE_COLORS.up}"></i>Moved up at least one band</span>
+        <span style="display:flex;align-items:center;gap:6px"><i style="display:inline-block;width:14px;height:14px;background:${MOVE_COLORS.same}"></i>Stayed in the same band</span>
+        <span style="display:flex;align-items:center;gap:6px"><i style="display:inline-block;width:14px;height:14px;background:${MOVE_COLORS.down}"></i>Moved down at least one band</span>
+        <span style="display:flex;align-items:center;gap:6px"><i style="display:inline-block;width:14px;height:14px;background:${NO_DATA};border:1px solid #ccc"></i>No data</span>`;
+    } else {
+      el.innerHTML = ORDER.map(c =>
+        `<span style="display:flex;align-items:center;gap:6px"><i style="display:inline-block;width:14px;height:14px;background:${COLORS[c]}"></i>${LABELS[c]}</span>`
+      ).join('') +
+      `<span style="display:flex;align-items:center;gap:6px"><i style="display:inline-block;width:14px;height:14px;background:${NO_DATA};border:1px solid #ccc"></i>No data</span>`;
+    }
+  }
+  buildLegend();
+
+  function refresh() {
+    layer.setStyle(f => ({
+      color: '#444', weight: 0.25,
+      fillColor: colorFor(f.properties), fillOpacity: 0.82,
+    }));
+    buildLegend();
+  }
+
+  document.querySelectorAll('input[name="mapyr"]').forEach(r => {
+    r.addEventListener('change', () => {
+      mode = document.querySelector('input[name="mapyr"]:checked').value;
+      refresh();
+    });
+  });
 }
 </script>
 </body>

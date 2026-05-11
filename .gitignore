@@ -5,3 +5,6 @@ data/LTDB_Std_All_Sample.zip
 data/ltdb_std_all_sample/
 .DS_Store
 __pycache__/
+data/gz_2010_36_140_00_500k.*
+data/ny_tracts_500k.zip
+data/tracts2010_raw.geojson
